@@ -159,6 +159,17 @@ app.get('/api/tts/file/:filename', async (req, res) => {
   }
 });
 
+// 获取TTS音色列表
+app.get('/api/tts/voices', async (req, res) => {
+  try {
+    const { getAvailableVoices } = await import('./services/tts.js');
+    const voices = await getAvailableVoices();
+    res.json({ voices });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 视频渲染
 app.post('/api/render', async (req, res) => {
   try {
@@ -216,6 +227,28 @@ app.get('/api/system/ffmpeg', async (req, res) => {
     const { isFFmpegAvailable } = await import('./services/ffmpeg.js');
     const available = await isFFmpegAvailable();
     res.json({ available });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 获取可用转场效果列表
+app.get('/api/transitions', async (req, res) => {
+  try {
+    const { getAvailableTransitions } = await import('./services/ffmpeg.js');
+    const transitions = getAvailableTransitions();
+    res.json({ transitions });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 获取可用滤镜列表
+app.get('/api/filters', async (req, res) => {
+  try {
+    const { getAvailableFilters } = await import('./services/ffmpeg.js');
+    const filters = getAvailableFilters();
+    res.json({ filters });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

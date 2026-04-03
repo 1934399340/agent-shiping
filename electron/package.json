@@ -1,19 +1,25 @@
 {
   "name": "ai-video-editor-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI视频自动剪辑桌面应用",
-  "main": "main.js",
+  "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
     "start": "electron .",
+    "dev": "tsc && electron .",
     "pack": "electron-packager . \"AI视频编辑器\" --platform=win32 --arch=x64 --out=release --overwrite --asar=false",
-    "dist": "npm run build && npm run pack"
+    "pack:mac": "electron-packager . \"AI视频编辑器\" --platform=darwin --arch=x64 --out=release --overwrite --asar=false",
+    "pack:linux": "electron-packager . \"AI视频编辑器\" --platform=linux --arch=x64 --out=release --overwrite --asar=false",
+    "dist": "npm run build && npm run pack",
+    "dist:all": "npm run build && npm run pack && npm run pack:mac && npm run pack:linux"
   },
   "author": "AI Video Editor Team",
   "license": "MIT",
   "devDependencies": {
+    "@types/node": "^20.10.0",
     "electron": "^28.3.3",
     "electron-packager": "^17.1.2",
     "typescript": "^5.7.3"
-  }
+  },
+  "dependencies": {}
 }

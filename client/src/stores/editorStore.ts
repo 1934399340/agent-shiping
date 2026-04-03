@@ -1,9 +1,7 @@
 import { create } from 'zustand';
 import type { Project, Track, TrackType, TimelineClip } from '@/types';
+import { systemService } from '@/services/platform';
 
-// ============================================
-// 工具函数
-// ============================================
 const genId = () => crypto.randomUUID().slice(0, 8);
 
 function createDefaultTrack(type: TrackType): Track {
@@ -45,65 +43,53 @@ function createDefaultProject(): Project {
   };
 }
 
-// ============================================
-// 编辑器历史（撤销/重做）
-// ============================================
 interface HistoryEntry {
   tracks: Track[];
   description: string;
 }
 
-// ============================================
-// 主 Store
-// ============================================
 interface EditorStore {
-  // 项目
   project: Project;
-
-  // 播放状态
   currentTime: number;
   isPlaying: boolean;
-  zoom: number; // 时间线缩放 0.5-5
-
-  // 选中状态
+  zoom: number;
   selectedClipId: string | null;
   selectedTrackId: string | null;
-
-  // 历史
   history: HistoryEntry[];
   historyIndex: number;
+  clipboard: TimelineClip | null;
 
-  // Actions
   setCurrentTime: (time: number) => void;
   setIsPlaying: (playing: boolean) => void;
   setZoom: (zoom: number) => void;
   selectClip: (clipId: string | null, trackId?: string | null) => void;
 
-  // 轨道操作
   addTrack: (type: TrackType) => void;
   removeTrack: (trackId: string) => void;
   toggleMute: (trackId: string) => void;
   toggleLock: (trackId: string) => void;
 
-  // 片段操作
   addClip: (trackId: string, clip: TimelineClip) => void;
   removeClip: (trackId: string, clipId: string) => void;
   moveClip: (fromTrackId: string, toTrackId: string, clipId: string, newStartTime: number) => void;
   updateClip: (trackId: string, clipId: string, updates: Partial<TimelineClip>) => void;
   splitClip: (trackId: string, clipId: string, splitTime: number) => void;
 
-  // 实用工具
   reverseClip: (trackId: string, clipId: string) => void;
   mirrorClip: (trackId: string, clipId: string, direction: 'horizontal' | 'vertical') => void;
   duplicateClip: (trackId: string, clipId: string) => void;
   trimClip: (trackId: string, clipId: string, newStart: number, newEnd: number) => void;
-  copyClip: (trackId: string, clipId: string) => TimelineClip | null;
-  pasteClip: (targetTrackId: string, startTime: number) => void;
+  
+  copyClipToClipboard: (trackId: string, clipId: string) => Promise<void>;
+  pasteClipFromClipboard: (targetTrackId: string, startTime: number) => Promise<void>;
+  cutClipToClipboard: (trackId: string, clipId: string) => Promise<void>;
 
-  // 历史
   pushHistory: (description: string) => void;
   undo: () => void;
   redo: () => void;
+  
+  loadProject: (project: Project) => void;
+  resetProject: () => void;
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -115,6 +101,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   selectedTrackId: null,
   history: [],
   historyIndex: -1,
+  clipboard: null,
 
   setCurrentTime: (time) => set({ currentTime: time }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
@@ -247,7 +234,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({ project: { ...state.project, tracks, updatedAt: Date.now() } });
   },
 
-  // 实用工具实现
   reverseClip: (trackId, clipId) => {
     const state = get();
     state.pushHistory('倒放片段');
@@ -257,7 +243,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...t,
         clips: t.clips.map((c) => {
           if (c.id !== clipId) return c;
-          // 标记为倒放（实际倒放需要在渲染时处理）
           return { ...c, reversed: true };
         }),
       };
@@ -299,7 +284,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
     if (!newClip) return;
 
-    // 将复制的片段放到时间线末尾
     newClip.startTime = maxEndTime;
 
     const tracks = state.project.tracks.map((t) => {
@@ -333,26 +317,72 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set({ project: { ...state.project, tracks, updatedAt: Date.now() } });
   },
 
-  // 剪贴板
-  _clipboard: null as TimelineClip | null,
-
-  copyClip: (trackId, clipId) => {
+  copyClipToClipboard: async (trackId, clipId) => {
     const state = get();
     for (const track of state.project.tracks) {
       if (track.id === trackId) {
         const clip = track.clips.find((c) => c.id === clipId);
         if (clip) {
-          return { ...clip };
+          const clipData = JSON.stringify({ ...clip, id: undefined });
+          set({ clipboard: { ...clip } });
+          await systemService.setClipboardText(`AVEDIT:${clipData}`);
+          return;
         }
       }
     }
-    return null;
   },
 
-  pasteClip: (targetTrackId, startTime) => {
+  pasteClipFromClipboard: async (targetTrackId, startTime) => {
     const state = get();
-    // 需要从外部传入剪贴板内容
-    // 这里简化处理，实际应该用状态管理
+    
+    let clipData: TimelineClip | null = state.clipboard;
+    
+    if (!clipData) {
+      try {
+        const text = await systemService.getClipboardText();
+        if (text.startsWith('AVEDIT:')) {
+          const parsed = JSON.parse(text.slice(7));
+          clipData = parsed as TimelineClip;
+        }
+      } catch {}
+    }
+    
+    if (!clipData) return;
+    
+    state.pushHistory('粘贴片段');
+    
+    const newClip: TimelineClip = {
+      ...clipData,
+      id: genId(),
+      startTime,
+    };
+    
+    const tracks = state.project.tracks.map((t) => {
+      if (t.id === targetTrackId) {
+        return { ...t, clips: [...t.clips, newClip] };
+      }
+      return t;
+    });
+    
+    set({ project: { ...state.project, tracks, updatedAt: Date.now() } });
+  },
+
+  cutClipToClipboard: async (trackId, clipId) => {
+    const state = get();
+    
+    for (const track of state.project.tracks) {
+      if (track.id === trackId) {
+        const clip = track.clips.find((c) => c.id === clipId);
+        if (clip) {
+          const clipData = JSON.stringify({ ...clip, id: undefined });
+          set({ clipboard: { ...clip } });
+          await systemService.setClipboardText(`AVEDIT:${clipData}`);
+          
+          state.removeClip(trackId, clipId);
+          return;
+        }
+      }
+    }
   },
 
   pushHistory: (description) =>
@@ -386,5 +416,28 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         historyIndex: newIndex,
         project: { ...state.project, tracks: JSON.parse(JSON.stringify(entry.tracks)) },
       };
+    }),
+
+  loadProject: (project) =>
+    set({
+      project,
+      history: [],
+      historyIndex: -1,
+      selectedClipId: null,
+      selectedTrackId: null,
+      currentTime: 0,
+      isPlaying: false,
+    }),
+
+  resetProject: () =>
+    set({
+      project: createDefaultProject(),
+      history: [],
+      historyIndex: -1,
+      selectedClipId: null,
+      selectedTrackId: null,
+      currentTime: 0,
+      isPlaying: false,
+      clipboard: null,
     }),
 }));

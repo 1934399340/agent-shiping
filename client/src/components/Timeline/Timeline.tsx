@@ -104,16 +104,21 @@ export default function Timeline() {
     };
   }, [isDragging, dragClipInfo, pps]);
 
+  const {
+    copyClipToClipboard,
+    pasteClipFromClipboard,
+    cutClipToClipboard,
+  } = useEditorStore();
+
   // 快捷键
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       if (e.key === 'Delete' && selectedClipId && selectedTrackId) {
         removeClip(selectedTrackId, selectedClipId);
       }
       if (e.key === 'b' || e.key === 'B') {
-        // 拆分快捷键
         if (selectedClipId && selectedTrackId) {
           splitClip(selectedTrackId, selectedClipId, currentTime);
         }
@@ -122,10 +127,39 @@ export default function Timeline() {
         e.preventDefault();
         useEditorStore.getState().setIsPlaying(!useEditorStore.getState().isPlaying);
       }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedClipId && selectedTrackId) {
+        e.preventDefault();
+        await copyClipToClipboard(selectedTrackId, selectedClipId);
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'x' && selectedClipId && selectedTrackId) {
+        e.preventDefault();
+        await cutClipToClipboard(selectedTrackId, selectedClipId);
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && selectedTrackId) {
+        e.preventDefault();
+        await pasteClipFromClipboard(selectedTrackId, currentTime);
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd' && selectedClipId && selectedTrackId) {
+        e.preventDefault();
+        useEditorStore.getState().duplicateClip(selectedTrackId, selectedClipId);
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          useEditorStore.getState().redo();
+        } else {
+          useEditorStore.getState().undo();
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedClipId, selectedTrackId, removeClip, splitClip, currentTime]);
+  }, [selectedClipId, selectedTrackId, removeClip, splitClip, currentTime, copyClipToClipboard, pasteClipFromClipboard, cutClipToClipboard]);
 
   // 缩放时间线
   const handleZoomChange = (delta: number) => {
