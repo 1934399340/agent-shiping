@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #13131a;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a3a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a4a;
+}
+
+/* 全局选择 */
+::selection {
+  background: rgba(99, 102, 241, 0.3);
+}
+
+body {
+  overflow: hidden;
+  background: #0a0a0f;
+}
+
+/* 视频播放器全屏按钮 */
+video::-webkit-media-controls-fullscreen-button {
+  display: none;
+}
+
+/* 时间线拖拽样式 */
+.timeline-clip {
+  transition: box-shadow 0.15s ease;
+  user-select: none;
+}
+.timeline-clip:hover {
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5);
+}
+.timeline-clip.selected {
+  box-shadow: 0 0 0 2px #6366f1;
+}
+
+/* 搜索结果卡片动画 */
+.search-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.search-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+/* 转场预设动画 */
+.transition-preset {
+  transition: all 0.2s ease;
+}
+.transition-preset:hover {
+  transform: scale(1.05);
+}
+
+/* 加载脉冲 */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #1a1a24 25%, #2a2a3a 50%, #1a1a24 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}

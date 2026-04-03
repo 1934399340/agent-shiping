@@ -1,0 +1,18 @@
+{
+  "name": "ai-video-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI视频自动剪辑Agent - 类剪映的Web视频编辑器",
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "dev:client": "pnpm --filter client dev",
+    "dev:server": "pnpm --filter server dev",
+    "build": "pnpm --filter client build && pnpm --filter server build",
+    "start": "pnpm --filter server start",
+    "build:electron": "pnpm build && cd electron && pnpm install && pnpm build",
+    "pack:electron": "cd electron && pnpm pack",
+    "dist:electron": "cd electron && pnpm dist"
+  },
+  "keywords": ["video-editor", "ai", "tts", "ffmpeg", "electron"],
+  "license": "MIT"
+}

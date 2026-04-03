@@ -1,0 +1,487 @@
+import searchAll from '../search/index.js';
+import { searchMusic } from '../search/music.js';
+// 超时控制
+const SEARCH_TIMEOUT = 10000; // 10秒超时
+const MAX_CONCURRENT_SEARCHES = 3; // 最大并发搜索数
+// ============================================
+// 脚本解析器
+// ============================================
+export function parseScript(scriptText) {
+    const lines = scriptText.trim().split('\n').filter(l => l.trim());
+    // 检测风格
+    let style = 'documentary';
+    if (scriptText.includes('【快节奏】') || scriptText.includes('踩点') || scriptText.includes('卡点')) {
+        style = 'fast-paced';
+    }
+    else if (scriptText.includes('【电影感】') || scriptText.includes('大片')) {
+        style = 'cinematic';
+    }
+    else if (scriptText.includes('【广告】') || scriptText.includes('商业')) {
+        style = 'commercial';
+    }
+    else if (scriptText.includes('【短视频】') || scriptText.includes('抖音') || scriptText.includes('tiktok')) {
+        style = 'social';
+    }
+    // 提取标题
+    let title = 'AI生成视频';
+    const titleMatch = scriptText.match(/^[#【\[].+[】\]#]/);
+    if (titleMatch) {
+        title = titleMatch[0].replace(/^[#【\[\]]|[】\]#]$/g, '').trim();
+    }
+    // 解析每个段落
+    const segments = [];
+    let totalDuration = 0;
+    for (const line of lines) {
+        // 跳过标题行
+        if (line.match(/^[#【\[]/))
+            continue;
+        // 解析格式: "解说词 | 关键词 | 时长 | 情绪"
+        const parts = line.split('|').map(p => p.trim());
+        if (parts.length >= 1 && parts[0]) {
+            const text = parts[0];
+            const keywords = parts[1] ? parts[1].split(/[,，、\s]+/).filter(Boolean) : extractKeywords(text);
+            const duration = parts[2] ? parseFloat(parts[2]) : estimateDuration(text);
+            const moodStr = parts[3]?.toLowerCase() || 'neutral';
+            const mood = ['energetic', 'calm', 'dramatic', 'happy', 'sad', 'neutral'].includes(moodStr)
+                ? moodStr
+                : 'neutral';
+            segments.push({
+                id: `seg-${segments.length + 1}`,
+                text,
+                keywords,
+                duration,
+                mood,
+                transition: suggestTransition(mood, style),
+            });
+            totalDuration += duration;
+        }
+    }
+    // 如果没有解析出段落，智能分段
+    if (segments.length === 0) {
+        const sentences = scriptText.split(/[。！？.!?]+/).filter(s => s.trim());
+        for (const sentence of sentences) {
+            if (sentence.trim().length < 2)
+                continue;
+            const keywords = extractKeywords(sentence);
+            const duration = estimateDuration(sentence);
+            segments.push({
+                id: `seg-${segments.length + 1}`,
+                text: sentence.trim(),
+                keywords,
+                duration,
+                mood: 'neutral',
+                transition: suggestTransition('neutral', style),
+            });
+            totalDuration += duration;
+        }
+    }
+    // 推断背景音乐风格
+    const avgMood = calculateDominantMood(segments);
+    return {
+        title,
+        segments,
+        totalDuration,
+        style,
+        backgroundMusic: {
+            genre: suggestMusicGenre(avgMood, style),
+            mood: avgMood,
+            bpm: style === 'fast-paced' ? 128 : style === 'cinematic' ? 80 : 100,
+        },
+    };
+}
+// ============================================
+// 素材搜索与匹配
+// ============================================
+export async function searchAndMatchAssets(parsedScript) {
+    const assetMap = new Map();
+    // 收集所有关键词
+    const allKeywords = new Set();
+    for (const segment of parsedScript.segments) {
+        segment.keywords.forEach(k => allKeywords.add(k));
+    }
+    console.log(`🔍 搜索关键词: ${Array.from(allKeywords).join(', ')}`);
+    // 限制并发搜索数量
+    const keywords = Array.from(allKeywords).slice(0, MAX_CONCURRENT_SEARCHES);
+    // 批量搜索素材（带超时）
+    const searchPromises = keywords.map(async (keyword) => {
+        try {
+            // 添加超时控制
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('搜索超时')), SEARCH_TIMEOUT));
+            const searchPromise = searchAll({
+                query: keyword,
+                source: 'all',
+                perPage: 3, // 减少每页数量
+            });
+            const result = await Promise.race([searchPromise, timeoutPromise]);
+            return { keyword, assets: result?.items || [] };
+        }
+        catch (err) {
+            console.warn(`搜索 "${keyword}" 失败:`, err);
+            return { keyword, assets: [] };
+        }
+    });
+    try {
+        const results = await Promise.allSettled(searchPromises);
+        for (const result of results) {
+            if (result.status === 'fulfilled' && result.value.assets.length > 0) {
+                assetMap.set(result.value.keyword, result.value.assets);
+            }
+        }
+    }
+    catch (err) {
+        console.error('搜索过程出错:', err);
+    }
+    console.log(`✅ 找到 ${assetMap.size} 个关键词的素材`);
+    // 如果没有找到任何素材，使用备用素材
+    if (assetMap.size === 0) {
+        console.log('⚠️ 未找到素材，使用备用素材');
+        // 返回一些通用的演示素材
+        const demoAssets = getDemoAssets();
+        for (const keyword of keywords.slice(0, 3)) {
+            assetMap.set(keyword, demoAssets.slice(0, 2));
+        }
+    }
+    return assetMap;
+}
+// 备用演示素材
+function getDemoAssets() {
+    return [
+        {
+            id: 'demo-1',
+            title: 'City Traffic at Night',
+            thumbnail: 'https://images.unsplash.com/photo-1519501025264-69ba3569e6c0?w=400',
+            videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-driving-at-night-through-a-lit-city-road-4050-large.mp4',
+            duration: 10,
+            width: 1920,
+            height: 1080,
+            source: 'mixkit',
+            tags: ['city', 'night', 'traffic'],
+        },
+        {
+            id: 'demo-2',
+            title: 'Nature Forest Stream',
+            thumbnail: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400',
+            videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-stream-in-the-middle-of-the-forest-539-large.mp4',
+            duration: 12,
+            width: 1920,
+            height: 1080,
+            source: 'mixkit',
+            tags: ['nature', 'forest', 'water'],
+        },
+        {
+            id: 'demo-3',
+            title: 'Abstract Technology Background',
+            thumbnail: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400',
+            videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-abstract-technology-network-connections-27610-large.mp4',
+            duration: 15,
+            width: 1920,
+            height: 1080,
+            source: 'mixkit',
+            tags: ['abstract', 'technology', 'background'],
+        },
+        {
+            id: 'demo-4',
+            title: 'Ocean Waves on Beach',
+            thumbnail: 'https://images.unsplash.com/photo-1505142468610-359e7d316be0?w=400',
+            videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-waves-in-the-water-1164-large.mp4',
+            duration: 20,
+            width: 1920,
+            height: 1080,
+            source: 'mixkit',
+            tags: ['ocean', 'beach', 'waves'],
+        },
+    ];
+}
+// ============================================
+// 自动编排时间线
+// ============================================
+export async function autoArrangeTimeline(parsedScript, assetMap) {
+    const clips = [];
+    const textOverlays = [];
+    let currentTime = 0;
+    // 计算节拍点（用于踩点）
+    const bpm = parsedScript.backgroundMusic?.bpm || 100;
+    const beatInterval = 60 / bpm; // 每拍秒数
+    const beatMarkers = [];
+    for (let t = 0; t < parsedScript.totalDuration; t += beatInterval) {
+        beatMarkers.push(t);
+    }
+    for (let i = 0; i < parsedScript.segments.length; i++) {
+        const segment = parsedScript.segments[i];
+        // 找最佳匹配素材
+        let bestAsset = null;
+        let bestScore = 0;
+        for (const keyword of segment.keywords) {
+            const assets = assetMap.get(keyword) || [];
+            for (const asset of assets) {
+                // 避免重复使用同一素材
+                if (clips.some(c => c.asset.id === asset.id))
+                    continue;
+                // 计算匹配分数
+                const score = calculateAssetScore(asset, segment, parsedScript.style);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestAsset = asset;
+                }
+            }
+        }
+        // 如果没找到素材，使用备用方案
+        if (!bestAsset) {
+            const anyAssets = Array.from(assetMap.values()).flat();
+            if (anyAssets.length > 0) {
+                bestAsset = anyAssets[i % anyAssets.length];
+            }
+            else {
+                // 如果完全没有素材，使用演示素材
+                const demoAssets = getDemoAssets();
+                bestAsset = demoAssets[i % demoAssets.length];
+            }
+        }
+        if (bestAsset) {
+            // 计算片段时长（考虑踩点）
+            let clipDuration = segment.duration;
+            // 快节奏风格：对齐到节拍
+            if (parsedScript.style === 'fast-paced' && beatMarkers.length > 0) {
+                const nextBeat = beatMarkers.find(b => b > currentTime + 1);
+                if (nextBeat && nextBeat - currentTime < clipDuration + 2) {
+                    clipDuration = nextBeat - currentTime;
+                }
+            }
+            // 确保不超过素材时长
+            const actualDuration = Math.min(clipDuration, bestAsset.duration);
+            // 智能裁剪点
+            const trimStart = calculateBestTrimStart(bestAsset, segment.mood);
+            const trimEnd = Math.min(trimStart + actualDuration, bestAsset.duration);
+            clips.push({
+                id: `clip-${i + 1}`,
+                asset: bestAsset,
+                startTime: currentTime,
+                duration: clipDuration,
+                trimStart,
+                trimEnd,
+                transitionIn: segment.transition,
+                transitionOut: parsedScript.segments[i + 1]?.transition,
+                speed: calculateOptimalSpeed(segment, bestAsset),
+                effects: suggestEffects(segment.mood, parsedScript.style),
+            });
+            // 添加文字叠加
+            if (segment.text) {
+                textOverlays.push({
+                    id: `text-${i + 1}`,
+                    text: segment.text,
+                    startTime: currentTime,
+                    duration: clipDuration,
+                    position: 'bottom',
+                    style: parsedScript.style === 'cinematic' ? 'subtitle' : 'caption',
+                });
+            }
+        }
+        currentTime += segment.duration;
+    }
+    // 搜索背景音乐
+    let music;
+    if (parsedScript.backgroundMusic) {
+        try {
+            const musicResults = await searchMusic({
+                query: parsedScript.backgroundMusic.genre,
+                genre: parsedScript.backgroundMusic.genre,
+                perPage: 5,
+            });
+            if (musicResults.items.length > 0) {
+                const track = musicResults.items[0];
+                music = {
+                    url: track.audioUrl,
+                    title: track.title,
+                    duration: track.duration,
+                    bpm: track.bpm || bpm,
+                    fadeIn: 1.5,
+                    fadeOut: 2,
+                };
+            }
+        }
+        catch (err) {
+            console.warn('搜索音乐失败:', err);
+        }
+    }
+    return {
+        success: clips.length > 0,
+        clips,
+        music,
+        textOverlays,
+        totalDuration: currentTime,
+        beatMarkers: parsedScript.style === 'fast-paced' ? beatMarkers : undefined,
+    };
+}
+// ============================================
+// 辅助函数
+// ============================================
+function extractKeywords(text) {
+    // 简单的关键词提取（实际项目中可以用NLP）
+    const stopWords = new Set(['的', '了', '是', '在', '和', '与', '或', '这', '那', '有', '一个', '我们', '你们', '他们', '它们', '自己', '什么', '怎么', '如何', '为什么', '哪', '谁', '哪里', '什么时候', '可以', '能', '会', '要', '想', '让', '把', '被', '给', '向', '从', '到', '对', '为', '以', '于', '等', '但', '却', '而', '且', '或', '如果', '虽然', '因为', '所以', '然后', '接着', '最后', '首先', '其次', '再次']);
+    // 提取中文词组和英文单词
+    const words = text.match(/[\u4e00-\u9fa5]{2,4}|[a-zA-Z]{3,}/gi) || [];
+    // 过滤停用词
+    return [...new Set(words.filter(w => !stopWords.has(w)))]
+        .slice(0, 5); // 最多5个关键词
+}
+function estimateDuration(text) {
+    // 中文约3字/秒，英文约15词/秒
+    const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const englishWords = (text.match(/[a-zA-Z]+/g) || []).length;
+    const duration = Math.max(2, chineseChars / 3 + englishWords / 15);
+    // 加上停顿时间
+    return Math.ceil(duration + 0.5);
+}
+function suggestTransition(mood, style) {
+    const transitions = {
+        energetic: ['zoom-in', 'glitch', 'whip-pan', 'flash'],
+        calm: ['fade', 'dissolve', 'blur'],
+        dramatic: ['zoom-rotate-in', 'iris-in', 'luma-fade'],
+        happy: ['bounce', 'spin', 'slide-up'],
+        sad: ['fade', 'blur-zoom', 'dissolve'],
+        neutral: ['fade', 'cross-fade', 'dissolve'],
+    };
+    const styleTransitions = {
+        cinematic: ['iris-out', 'luma-fade', 'dissolve'],
+        'fast-paced': ['glitch', 'whip-pan', 'zoom-in'],
+        documentary: ['fade', 'cross-fade', 'dissolve'],
+        commercial: ['zoom-bounce', 'flash', 'slide-left'],
+        social: ['glitch-digital', 'zoom-in', 'bounce'],
+    };
+    const pool = styleTransitions[style] || transitions[mood] || transitions.neutral;
+    return pool[Math.floor(Math.random() * pool.length)];
+}
+function suggestMusicGenre(mood, style) {
+    const genreMap = {
+        energetic: 'electronic',
+        calm: 'ambient',
+        dramatic: 'cinematic',
+        happy: 'pop',
+        sad: 'folk',
+        neutral: 'ambient',
+    };
+    const styleGenreMap = {
+        cinematic: 'cinematic',
+        'fast-paced': 'electronic',
+        documentary: 'ambient',
+        commercial: 'corporate',
+        social: 'pop',
+    };
+    return styleGenreMap[style] || genreMap[mood] || 'ambient';
+}
+function calculateDominantMood(segments) {
+    const moodCounts = {};
+    for (const seg of segments) {
+        moodCounts[seg.mood] = (moodCounts[seg.mood] || 0) + 1;
+    }
+    let dominantMood = 'neutral';
+    let maxCount = 0;
+    for (const [mood, count] of Object.entries(moodCounts)) {
+        if (count > maxCount) {
+            maxCount = count;
+            dominantMood = mood;
+        }
+    }
+    return dominantMood;
+}
+function calculateAssetScore(asset, segment, style) {
+    let score = 0;
+    // 标题匹配
+    const titleLower = asset.title.toLowerCase();
+    for (const keyword of segment.keywords) {
+        if (titleLower.includes(keyword.toLowerCase())) {
+            score += 10;
+        }
+    }
+    // 标签匹配
+    if (asset.tags) {
+        for (const tag of asset.tags) {
+            for (const keyword of segment.keywords) {
+                if (tag.toLowerCase().includes(keyword.toLowerCase())) {
+                    score += 5;
+                }
+            }
+        }
+    }
+    // 时长适配
+    const durationDiff = Math.abs(asset.duration - segment.duration);
+    score -= durationDiff * 0.5;
+    // 分辨率加分
+    if (asset.width >= 1920)
+        score += 5;
+    // 风格适配
+    if (style === 'cinematic' && asset.width / asset.height > 1.8) {
+        score += 8; // 宽屏加分
+    }
+    return score;
+}
+function calculateBestTrimStart(asset, mood) {
+    // 根据情绪决定从哪里开始截取
+    if (mood === 'dramatic') {
+        // 从中间开始，跳过平淡部分
+        return Math.min(asset.duration * 0.2, 3);
+    }
+    else if (mood === 'energetic') {
+        // 从头开始，最精彩的部分
+        return 0;
+    }
+    else {
+        // 默认从开头
+        return 0;
+    }
+}
+function calculateOptimalSpeed(segment, asset) {
+    // 如果素材太长，可以加速
+    if (asset.duration > segment.duration * 1.5) {
+        // 快节奏风格可以更激进地加速
+        return Math.min(2, asset.duration / segment.duration);
+    }
+    return 1;
+}
+function suggestEffects(mood, style) {
+    const effects = [];
+    if (style === 'cinematic') {
+        effects.push('film-grain', 'vignette');
+    }
+    if (mood === 'dramatic') {
+        effects.push('contrast-boost');
+    }
+    if (style === 'social') {
+        effects.push('vibrant');
+    }
+    return effects;
+}
+// ============================================
+// 主入口
+// ============================================
+export async function autoEdit(scriptText) {
+    console.log('🎬 开始AI自动剪辑...');
+    try {
+        // 1. 解析脚本
+        const parsedScript = parseScript(scriptText);
+        console.log(`📝 解析脚本: ${parsedScript.title}, ${parsedScript.segments.length} 个段落, 风格: ${parsedScript.style}`);
+        // 2. 搜索素材（带错误处理）
+        let assetMap;
+        try {
+            assetMap = await searchAndMatchAssets(parsedScript);
+        }
+        catch (searchErr) {
+            console.warn('搜索失败，使用备用素材:', searchErr);
+            assetMap = new Map();
+        }
+        // 3. 自动编排
+        const result = await autoArrangeTimeline(parsedScript, assetMap);
+        console.log(`✨ AI剪辑完成: ${result.clips.length} 个片段, 总时长 ${result.totalDuration.toFixed(1)}s`);
+        return result;
+    }
+    catch (err) {
+        console.error('AI剪辑失败:', err);
+        // 返回空结果而不是抛出错误
+        return {
+            success: false,
+            clips: [],
+            textOverlays: [],
+            totalDuration: 0,
+        };
+    }
+}
