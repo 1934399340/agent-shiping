@@ -14,12 +14,12 @@ type LeftPanelTab = 'search' | 'media' | 'music';
 
 export default function App() {
   const project = useEditorStore((s) => s.project);
-  const { addClip, tracks } = useEditorStore();
+  const { addClip } = useEditorStore();
   const [leftTab, setLeftTab] = useState<LeftPanelTab>('media');
 
   // 添加音乐到时间线
   const handleAddMusicToTimeline = (music: AudioAsset) => {
-    const audioTrack = tracks.find((t) => t.type === 'audio');
+    const audioTrack = project.tracks.find((t) => t.type === 'audio');
     if (audioTrack) {
       addClip(audioTrack.id, {
         id: `audio-${Date.now()}`,

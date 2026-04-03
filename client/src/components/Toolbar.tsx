@@ -194,7 +194,7 @@ function ToolBtn({
 // ============================================
 function SettingsModal({ project, onClose }: { project: any; onClose: () => void }) {
   const { setResolution, setFps, setProjectName } = useEditorStore();
-  const [activeTab, setActiveTab] = useState<'project' | 'render' | 'shortcuts' | 'about'>('project');
+  const [activeTab, setActiveTab] = useState<'project' | 'render' | 'shortcuts' | 'api' | 'about'>('project');
   const [tempName, setTempName] = useState(project.name);
   const [tempWidth, setTempWidth] = useState(project.resolution.width);
   const [tempHeight, setTempHeight] = useState(project.resolution.height);
@@ -239,6 +239,7 @@ function SettingsModal({ project, onClose }: { project: any; onClose: () => void
             { id: 'project', label: '项目设置', icon: <FolderOpen size={14} /> },
             { id: 'render', label: '渲染设置', icon: <Monitor size={14} /> },
             { id: 'shortcuts', label: '快捷键', icon: <Keyboard size={14} /> },
+            { id: 'api', label: 'API设置', icon: <Cloud size={14} /> },
             { id: 'about', label: '关于', icon: <Info size={14} /> },
           ].map((tab) => (
             <button
@@ -440,6 +441,79 @@ function SettingsModal({ project, onClose }: { project: any; onClose: () => void
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* API设置 */}
+          {activeTab === 'api' && (
+            <div className="space-y-4">
+              <div className="p-4 bg-editor-bg rounded-lg">
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <Cloud size={14} className="text-editor-accent" />
+                  API 配置
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-editor-muted mb-1.5">Pexels API Key</label>
+                    <input
+                      type="text"
+                      placeholder="输入 Pexels API Key"
+                      className="w-full px-3 py-2 bg-editor-bg border border-editor-border rounded-lg
+                        text-sm focus:outline-none focus:border-editor-accent"
+                    />
+                    <p className="text-xs text-editor-muted mt-1">
+                      用于搜索免费视频素材
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-editor-muted mb-1.5">API 基础 URL</label>
+                    <input
+                      type="text"
+                      defaultValue="http://localhost:3001"
+                      className="w-full px-3 py-2 bg-editor-bg border border-editor-border rounded-lg
+                        text-sm font-mono focus:outline-none focus:border-editor-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-editor-muted mb-1.5">超时设置</label>
+                    <input
+                      type="number"
+                      defaultValue={30}
+                      min={5}
+                      max={60}
+                      className="w-full px-3 py-2 bg-editor-bg border border-editor-border rounded-lg
+                        text-sm font-mono focus:outline-none focus:border-editor-accent"
+                    />
+                    <p className="text-xs text-editor-muted mt-1">
+                      API 请求超时时间（秒）
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 bg-editor-bg rounded-lg">
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <HardDrive size={14} className="text-editor-accent" />
+                  本地存储
+                </h3>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      defaultChecked
+                      className="text-editor-accent focus:ring-editor-accent"
+                    />
+                    <span className="text-sm">启用本地缓存</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      defaultChecked
+                      className="text-editor-accent focus:ring-editor-accent"
+                    />
+                    <span className="text-sm">自动保存项目</span>
+                  </label>
+                </div>
+              </div>
             </div>
           )}
 
