@@ -68,6 +68,7 @@ interface EditorStore {
   removeTrack: (trackId: string) => void;
   toggleMute: (trackId: string) => void;
   toggleLock: (trackId: string) => void;
+  reorderTracks: (newOrder: string[]) => void;
 
   addClip: (trackId: string, clip: TimelineClip) => void;
   removeClip: (trackId: string, clipId: string) => void;
@@ -135,6 +136,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const tracks = state.project.tracks.map((t) =>
         t.id === trackId ? { ...t, locked: !t.locked } : t,
       );
+      return { project: { ...state.project, tracks } };
+    }),
+
+  reorderTracks: (newOrder) =>
+    set((state) => {
+      const trackMap = new Map(state.project.tracks.map((t) => [t.id, t]));
+      const tracks = newOrder.map((id) => trackMap.get(id)!).filter(Boolean);
       return { project: { ...state.project, tracks } };
     }),
 

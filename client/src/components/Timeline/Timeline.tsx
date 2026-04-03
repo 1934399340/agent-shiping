@@ -2,7 +2,25 @@ import { useCallback, useRef, useState, useEffect } from 'react';
 import {
   Plus, Minus, Trash2, Volume2, VolumeX, Lock, Unlock,
   Eye, EyeOff, ZoomIn, ZoomOut, Scissors, Music, Type, Sparkles,
+  GripVertical,
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useEditorStore } from '@/stores/editorStore';
 import type { Track, TrackType } from '@/types';
 
@@ -25,13 +43,68 @@ const TRACK_LABELS: Record<TrackType, string> = {
   image: '图片',
 };
 
+function SortableTrackLabel({ track }: { track: Track }) {
+  const { toggleMute, toggleLock, addTrack } = useEditorStore();
+  const colors = TRACK_COLORS[track.type];
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: track.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="h-[52px] flex items-center px-2 gap-1.5 border-b border-editor-border/50"
+    >
+      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
+        <GripVertical size={12} className="text-editor-muted" />
+      </div>
+      <div className={`w-5 h-5 rounded flex items-center justify-center ${colors.bg}`}>
+        <span className={colors.text}>{colors.icon}</span>
+      </div>
+      <span className="text-[11px] font-medium truncate flex-1">
+        {track.name}
+      </span>
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={() => toggleMute(track.id)}
+          className={`p-1 rounded transition-colors ${track.muted ? 'text-editor-danger' : 'text-editor-muted hover:text-editor-text'}`}
+          title={track.muted ? '取消静音' : '静音'}
+        >
+          {track.muted ? <VolumeX size={11} /> : <Volume2 size={11} />}
+        </button>
+        <button
+          onClick={() => toggleLock(track.id)}
+          className={`p-1 rounded transition-colors ${track.locked ? 'text-editor-accent' : 'text-editor-muted hover:text-editor-text'}`}
+          title={track.locked ? '解锁' : '锁定'}
+        >
+          {track.locked ? <Lock size={11} /> : <Unlock size={11} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Timeline() {
   const {
     project, currentTime, setCurrentTime, isPlaying,
     zoom, setZoom,
     selectedClipId, selectedTrackId, selectClip,
-    removeClip, splitClip,
+    removeClip, splitClip, reorderTracks,
   } = useEditorStore();
+  
+  const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
 
   const timelineRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -39,6 +112,33 @@ export default function Timeline() {
 
   const pps = PIXELS_PER_SECOND * zoom; // 实际每秒像素
   const totalWidth = Math.max(project.duration * pps, 1200);
+  const trackIds = project.tracks.map((track) => track.id);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = useCallback(
+    (event: any) => {
+      const { active, over } = event;
+
+      if (over && active.id !== over.id) {
+        const oldIndex = trackIds.indexOf(active.id);
+        const newIndex = trackIds.indexOf(over.id);
+        const newOrder = arrayMove(trackIds, oldIndex, newIndex);
+        reorderTracks(newOrder);
+      }
+      setActiveTrackId(null);
+    },
+    [trackIds, reorderTracks]
+  );
+
+  const handleDragStart = useCallback((event: any) => {
+    setActiveTrackId(event.active.id);
+  }, []);
 
   // 点击时间线设置当前时间
   const handleTimelineClick = useCallback(
@@ -188,6 +288,19 @@ export default function Timeline() {
           <span className="text-[10px] text-editor-muted font-medium uppercase tracking-wider">时间线</span>
           <div className="h-3 w-px bg-editor-border" />
           <button
+            onClick={() => {
+              const trackType = prompt('选择轨道类型 (video/audio/text/effect/image):') || 'video';
+              if (['video', 'audio', 'text', 'effect', 'image'].includes(trackType)) {
+                useEditorStore.getState().addTrack(trackType as any);
+              }
+            }}
+            className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-editor-muted
+              hover:text-editor-text hover:bg-editor-panel transition-colors"
+          >
+            <Plus size={11} /> 添加轨道
+          </button>
+          <div className="h-3 w-px bg-editor-border" />
+          <button
             onClick={() => useEditorStore.getState().splitClip(
               selectedTrackId || '', selectedClipId || '', currentTime
             )}
@@ -223,9 +336,43 @@ export default function Timeline() {
         <div className="flex min-h-full">
           {/* 轨道标签列 */}
           <div className="sticky left-0 z-20 w-40 min-w-[160px] bg-editor-surface border-r border-editor-border shrink-0">
-            {project.tracks.map((track) => (
-              <TrackLabel key={track.id} track={track} />
-            ))}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              onDragStart={handleDragStart}
+            >
+              <SortableContext
+                items={trackIds}
+                strategy={verticalListSortingStrategy}
+              >
+                {project.tracks.map((track) => (
+                  <SortableTrackLabel key={track.id} track={track} />
+                ))}
+              </SortableContext>
+              <DragOverlay>
+                {activeTrackId ? (
+                  <div className="opacity-80">
+                    {(() => {
+                      const track = project.tracks.find((t) => t.id === activeTrackId);
+                      if (!track) return null;
+                      const colors = TRACK_COLORS[track.type];
+                      return (
+                        <div className="h-[52px] flex items-center px-2 gap-1.5 border-b border-editor-border/50 bg-editor-surface shadow-lg rounded">
+                          <GripVertical size={12} className="text-editor-muted" />
+                          <div className={`w-5 h-5 rounded flex items-center justify-center ${colors.bg}`}>
+                            <span className={colors.text}>{colors.icon}</span>
+                          </div>
+                          <span className="text-[11px] font-medium truncate flex-1">
+                            {track.name}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           </div>
 
           {/* 时间线内容 */}
@@ -322,39 +469,6 @@ export default function Timeline() {
             ))}
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-/** 轨道标签组件 */
-function TrackLabel({ track }: { track: Track }) {
-  const { toggleMute, toggleLock, addTrack } = useEditorStore();
-  const colors = TRACK_COLORS[track.type];
-
-  return (
-    <div className="h-[52px] flex items-center px-2 gap-1.5 border-b border-editor-border/50">
-      <div className={`w-5 h-5 rounded flex items-center justify-center ${colors.bg}`}>
-        <span className={colors.text}>{colors.icon}</span>
-      </div>
-      <span className="text-[11px] font-medium truncate flex-1">
-        {track.name}
-      </span>
-      <div className="flex items-center gap-0.5">
-        <button
-          onClick={() => toggleMute(track.id)}
-          className={`p-1 rounded transition-colors ${track.muted ? 'text-editor-danger' : 'text-editor-muted hover:text-editor-text'}`}
-          title={track.muted ? '取消静音' : '静音'}
-        >
-          {track.muted ? <VolumeX size={11} /> : <Volume2 size={11} />}
-        </button>
-        <button
-          onClick={() => toggleLock(track.id)}
-          className={`p-1 rounded transition-colors ${track.locked ? 'text-editor-accent' : 'text-editor-muted hover:text-editor-text'}`}
-          title={track.locked ? '解锁' : '锁定'}
-        >
-          {track.locked ? <Lock size={11} /> : <Unlock size={11} />}
-        </button>
       </div>
     </div>
   );

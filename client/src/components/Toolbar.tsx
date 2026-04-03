@@ -199,6 +199,14 @@ function SettingsModal({ project, onClose }: { project: any; onClose: () => void
   const [tempWidth, setTempWidth] = useState(project.resolution.width);
   const [tempHeight, setTempHeight] = useState(project.resolution.height);
   const [tempFps, setTempFps] = useState(project.fps);
+  
+  // API 设置状态
+  const [pexelsApiKey, setPexelsApiKey] = useState(() => localStorage.getItem('pexelsApiKey') || '');
+  const [pixabayApiKey, setPixabayApiKey] = useState(() => localStorage.getItem('pixabayApiKey') || '');
+  const [apiBaseUrl, setApiBaseUrl] = useState(() => localStorage.getItem('apiBaseUrl') || 'http://localhost:3001');
+  const [timeout, setTimeout] = useState(() => parseInt(localStorage.getItem('apiTimeout') || '30'));
+  const [enableCache, setEnableCache] = useState(() => localStorage.getItem('enableCache') !== 'false');
+  const [autoSave, setAutoSave] = useState(() => localStorage.getItem('autoSave') !== 'false');
 
   const resolutionPresets = [
     { name: '4K (2160p)', width: 3840, height: 2160 },
@@ -217,6 +225,16 @@ function SettingsModal({ project, onClose }: { project: any; onClose: () => void
     setFps(tempFps);
     setProjectName(tempName);
     onClose();
+  };
+
+  const handleSaveApiSettings = () => {
+    localStorage.setItem('pexelsApiKey', pexelsApiKey);
+    localStorage.setItem('pixabayApiKey', pixabayApiKey);
+    localStorage.setItem('apiBaseUrl', apiBaseUrl);
+    localStorage.setItem('apiTimeout', timeout.toString());
+    localStorage.setItem('enableCache', enableCache.toString());
+    localStorage.setItem('autoSave', autoSave.toString());
+    alert('API 设置已保存！');
   };
 
   return (
@@ -457,19 +475,36 @@ function SettingsModal({ project, onClose }: { project: any; onClose: () => void
                     <label className="block text-xs text-editor-muted mb-1.5">Pexels API Key</label>
                     <input
                       type="text"
+                      value={pexelsApiKey}
+                      onChange={(e) => setPexelsApiKey(e.target.value)}
                       placeholder="输入 Pexels API Key"
                       className="w-full px-3 py-2 bg-editor-bg border border-editor-border rounded-lg
                         text-sm focus:outline-none focus:border-editor-accent"
                     />
                     <p className="text-xs text-editor-muted mt-1">
-                      用于搜索免费视频素材
+                      用于搜索免费视频素材（申请地址：https://www.pexels.com/api/）
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-editor-muted mb-1.5">Pixabay API Key</label>
+                    <input
+                      type="text"
+                      value={pixabayApiKey}
+                      onChange={(e) => setPixabayApiKey(e.target.value)}
+                      placeholder="输入 Pixabay API Key"
+                      className="w-full px-3 py-2 bg-editor-bg border border-editor-border rounded-lg
+                        text-sm focus:outline-none focus:border-editor-accent"
+                    />
+                    <p className="text-xs text-editor-muted mt-1">
+                      用于搜索免费视频和图片素材（申请地址：https://pixabay.com/api/docs/）
                     </p>
                   </div>
                   <div>
                     <label className="block text-xs text-editor-muted mb-1.5">API 基础 URL</label>
                     <input
                       type="text"
-                      defaultValue="http://localhost:3001"
+                      value={apiBaseUrl}
+                      onChange={(e) => setApiBaseUrl(e.target.value)}
                       className="w-full px-3 py-2 bg-editor-bg border border-editor-border rounded-lg
                         text-sm font-mono focus:outline-none focus:border-editor-accent"
                     />
@@ -478,7 +513,8 @@ function SettingsModal({ project, onClose }: { project: any; onClose: () => void
                     <label className="block text-xs text-editor-muted mb-1.5">超时设置</label>
                     <input
                       type="number"
-                      defaultValue={30}
+                      value={timeout}
+                      onChange={(e) => setTimeout(parseInt(e.target.value) || 30)}
                       min={5}
                       max={60}
                       className="w-full px-3 py-2 bg-editor-bg border border-editor-border rounded-lg
@@ -499,7 +535,8 @@ function SettingsModal({ project, onClose }: { project: any; onClose: () => void
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      defaultChecked
+                      checked={enableCache}
+                      onChange={(e) => setEnableCache(e.target.checked)}
                       className="text-editor-accent focus:ring-editor-accent"
                     />
                     <span className="text-sm">启用本地缓存</span>
@@ -507,13 +544,39 @@ function SettingsModal({ project, onClose }: { project: any; onClose: () => void
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      defaultChecked
+                      checked={autoSave}
+                      onChange={(e) => setAutoSave(e.target.checked)}
                       className="text-editor-accent focus:ring-editor-accent"
                     />
                     <span className="text-sm">自动保存项目</span>
                   </label>
                 </div>
               </div>
+              <div className="p-4 bg-editor-bg rounded-lg">
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <Sparkles size={14} className="text-editor-accent" />
+                  AI 配音
+                </h3>
+                <div className="space-y-2">
+                  <p className="text-sm text-editor-muted">
+                    <strong>Edge-TTS（默认）</strong> - 微软免费 TTS 服务，无需 API Key
+                  </p>
+                  <p className="text-sm text-editor-muted">
+                    支持 40+ 中文音色，安装方式：<code className="text-editor-accent">pip install edge-tts</code>
+                  </p>
+                  <div className="h-2 w-full bg-editor-border rounded-full mt-2" />
+                  <p className="text-sm text-editor-muted mt-2">
+                    <strong>阿里云 TTS（可选）</strong> - 需在服务器端配置环境变量
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleSaveApiSettings}
+                className="w-full py-2 bg-editor-accent text-white rounded-lg font-medium
+                  hover:bg-editor-accent-hover transition-colors"
+              >
+                保存 API 设置
+              </button>
             </div>
           )}
 
